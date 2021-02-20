@@ -1,0 +1,142 @@
+---
+title: "Koronavírus"
+author: "Granát Marcell és Mazzag Bálint"
+date: \today
+output: 
+  pdf_document: 
+    fig_caption: yes
+    toc: yes
+    toc_depth: 4
+header-includes:
+- \usepackage{fancyhdr}
+- \usepackage[hungarian]{babel}
+- \usepackage{natbib}
+- \pagestyle{fancy}
+- \fancyhf{}
+- \fancyhead[RE,LO]{\leftmark}
+- \fancyfoot[C]{\thepage}
+- \usepackage{lscape}
+- \usepackage{pdfpages}
+- \usepackage{titling}
+- \pretitle{\begin{center}\LARGE\includegraphics[width=5cm]{logo.png}\\[\bigskipamount]}
+- \posttitle{\end{center}}
+editor_options: 
+  chunk_output_type: console
+---
+
+\pagebreak
+
+\renewcommand{\abstractname}{Absztrakt}
+
+\begin{abstract}
+Here is the abstract.
+\end{abstract}
+
+\pagebreak
+
+# Bevezetés
+
+```{r setup, include=FALSE, warning=F}
+knitr::opts_chunk$set(echo = F, comment = "", warning = F, message = F, cache = T, dev = "cairo_pdf", error = T)
+```
+
+```{r packages}
+# Set up --------------------------------------------------------------------------------
+
+## Packages ============================================================================= 
+
+library(tidyverse)
+library(patchwork)
+library(knitr)
+library(broom)
+
+library(geofacet)
+library(tidytext)
+
+## Gg theme =============================================================================
+
+update_geom_defaults("point", list(fill = "#B1339E", 
+                                   shape = 21, 
+                                   color = "black", 
+                                   size = 1.4))
+update_geom_defaults("line", 
+                     list(color = "midnightblue", size = 1.4))
+
+update_geom_defaults("smooth", list(color = "red4", size = 1.4))
+
+update_geom_defaults("density", 
+                     list(color = "midnightblue", fill =  "midnightblue",
+                          alpha = .3, size = 1.4))
+
+extrafont::loadfonts(device="win")
+
+theme_set(theme_minimal() + theme(
+  legend.direction = "vertical",
+  # text = element_text(family = "Impact"),
+  plot.caption = element_text(family = "serif")
+))
+
+```
+
+```{r}
+load("dat.RData")
+```
+
+```{r}
+dat <- dat %>% 
+  select(date, text, country) %>% 
+  {left_join(tidytext::unnest_tokens(., words, text), 
+             get_sentiments("afinn"), by=c("words"="word"))} %>% 
+  # TODO other packages
+  group_by(date, country) %>% 
+  summarise(value = mean(value, na.rm = T), n = n()) %>% 
+  ungroup() %>% 
+  na.omit()
+
+```
+
+```{r}
+dat <- dat %>% 
+  mutate(
+    name = str_to_title(country)
+  ) %>% 
+  merge(eu_gdp)
+
+```
+
+
+```{r fig.cap="A szentiment alakulása országonként", fig.height=10, fig.width=15, out.extra='angle=90'}
+ggplot(dat, aes(date, value)) +
+  geom_hline(yintercept = 0, color = "grey20") +
+  geom_line(size = 1) +
+  facet_geo(~ name, grid = "eu_grid1") +
+  scale_x_date(limits = c(min(dat$date), max(dat$date)),
+               breaks = c(min(dat$date), max(dat$date))) +
+  labs(y = "Szentiment", x = NULL)
+
+```
+
+```{r}
+covid_df <- readr::read_csv("https://covid.ourworldindata.org/data/owid-covid-data.csv")
+```
+
+```{r}
+covid_df %>% 
+  transmute(name = location, date, cases = new_cases_per_million*1000,
+         death = new_deaths_per_million*1000) %>% 
+  merge(dat) %>% 
+  select(name, date, cases, death, value) %>% 
+  pivot_longer(3:5, names_to = "var") %>% 
+  ggplot(aes(date, value)) +
+  geom_line() +
+  facet_grid(var ~ name, scales = "free_y")
+```
+
+
+
+\pagebreak
+
+# Függelék: R kódok
+
+```{r ref.label=setdiff(knitr::all_labels(), c("setup")), eval=FALSE, echo=T, attr.source='.numberLines'}
+```
