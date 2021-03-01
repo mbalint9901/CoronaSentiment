@@ -4,16 +4,13 @@ library(tidyverse)
 library(rvest)
 library(parallel)
 
-start_date <- seq.Date(from = as.Date(44238, origin = "1899-12-30"), to = as.Date(44238, origin = "1899-12-30"), by = 2)
+start_date <- seq.Date(from = as.Date(43845, origin = "1899-12-30"), to = as.Date(44238, origin = "1899-12-30"), by = 2)
+
+URLs <- vector()
 
 for (i in seq_along(start_date)) {
-n_page <- 1
-initial_df <- tibble(date = "aa", title = "aa", URL = "aa")
-available_page <- 2
 
-while (n_page < available_page) {
-  
-source_page <- paste0(
+available_page <- paste0(
   "https://www.rtve.es/buscador?q=coronavirus&desde=",
   lubridate::day(start_date[i]),
   "%2F",
@@ -27,58 +24,34 @@ source_page <- paste0(
   "%2F",
   lubridate::year(start_date[i] + 1),
   "&site=noticias&start=",
-  n_page, "&sort=timestamp"
-) %>% read_html()
-
-available_page <- source_page %>% 
+  1, "&sort=timestamp"
+) %>% read_html() %>% 
   html_nodes(".goend a") %>% 
   html_attr("href") %>% 
   {gsub(".*start=", "", .)} %>% 
-  {gsub("&sort.*", "", .)}
-  
+  {gsub("&sort.*", "", .)} %>% 
+  as.numeric()
 
-initial_df <- rbind(initial_df,
-data.frame(
-  date = reduce(html_text(html_nodes(source_page, '.datpub')), c),
-  title = reduce(html_text(html_nodes(source_page, '.maintitle')), c),
-  URL = reduce(html_attr(html_nodes(source_page, '.txtBox>h2>a'), 'href'), c)
+if (length(available_page) == 0) available_page <- 1
+
+URLs <- c(URLs, paste0(
+  "https://www.rtve.es/buscador?q=coronavirus&desde=",
+  lubridate::day(start_date[i]),
+  "%2F",
+  lubridate::month(start_date[i]),
+  "%2F",
+  lubridate::year(start_date[i]),
+  "&hasta=",
+  lubridate::day(start_date[i] + 1),
+  "%2F",
+  lubridate::month(start_date[i] + 1),
+  "%2F",
+  lubridate::year(start_date[i] + 1),
+  "&site=noticias&start=",
+  1:available_page, "&sort=timestamp"
 )
-                    ) 
-
-n_page <- n_page + 1
-
+)
 }
-}
-
-
-seq.Date(from = as.Date(44238, "1899-12-30"), to = as.Date(44238, "1899-12-30"), by = 2) %>% 
-  {
-    paste0(
-      "https://www.rtve.es/buscador?q=coronavirus&desde=",
-      lubridate::day(.),
-      "%2F",
-      lubridate::month(.),
-      "%2F",
-      lubridate::year(.),
-      "&hasta=",
-      lubridate::day(. + 1),
-      "%2F",
-      lubridate::month(. + 1),
-      "%2F",
-      lubridate::year(. + 1),
-      "&site=noticias&start=",
-      n_page, "&sort=timestamp"
-    )
-  }
-
-read_html(x) %>% 
-  html_nodes(".paginaBox") %>% 
-  html_text() %>% 
-  str_extract_all("\\d") %>% 
-  .[[1]] %>% 
-  as.numeric() %>% 
-  max()
-
 
 f.initial_df <- function(URL) {
   tryCatch({
@@ -107,7 +80,11 @@ clusterEvalQ(cl, library(rvest))
 clusterEvalQ(cl, library(purrr))
 
 initial_df <- parLapply(cl = cl, X = URLs, fun = f.initial_df)
+
 initial_df <- reduce(Filter(f = Negate(is.null), initial_df), rbind)
+
+initial_df <- filter(initial_df, !str_detect(URL, "/videos/")) %>% 
+  filter(!str_detect(URL, "/audios/"))
 
 clusterEvalQ(cl, library(magrittr))
 clusterEvalQ(cl, library(stringr))
@@ -116,11 +93,11 @@ clusterExport(cl, list("f.text", "initial_df"), envir = environment())
 articles <- parLapply(cl = cl, X = initial_df$URL, fun = f.text)
 stopCluster(cl)
 
-Malta_rawtext <- cbind(initial_df, reduce(articles, c)) %>% 
+Spain_rawtext <- cbind(initial_df, reduce(articles, c)) %>% 
   set_names("date", "title", "URL", "text") %>% 
   filter(text != "") %>% 
   mutate(
-    date = lubridate::mdy(date),
+    # date = lubridate::dmy(date),
     title = str_remove_all(title, "\n"),
     title = str_remove_all(title, "\t"),
     text = str_replace_all(text, "\n", " "), # clean text
@@ -130,5 +107,5 @@ Malta_rawtext <- cbind(initial_df, reduce(articles, c)) %>%
   )
 
 setwd("C:/rprojects/CoronaSentiment/scrapping RData")
-save(list = c("Malta_rawtext"), file = "Malta_rawtext.RData")
+save(list = c("Spain_rawtext"), file = "Spain_rawtext.RData")
 
